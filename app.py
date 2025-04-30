@@ -1,31 +1,29 @@
 import streamlit as st
 import pandas as pd
 import io
-import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 
+# إعدادات الصفحة
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 st.title("📊 INTERSOFT Analyzer")
 
-# اسم المستخدم في أعلى الصفحة
+# مجلد حفظ الملفات
+UPLOAD_DIR = "uploaded_files"
+LOG_FILE = "logs.csv"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# اسم المستخدم أعلى الصفحة
 username = st.text_input("🧑‍💻 Enter your name:", key="username", placeholder="Type your name here...")
 
+# رفع الملف
 uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"])
 
 # الحالات المعروفة لتصنيف الملاحظات
 known_cases = [
-    "TERMINAL ID - WRONG DATE",
-    "NO IMAGE FOR THE DEVICE",
-    "WRONG DATE",
-    "TERMINAL ID",
-    "NO J.O",
-    "DONE",
-    "NO RETAILERS SIGNATURE",
-    "UNCLEAR IMAGE",
-    "NO ENGINEER SIGNATURE",
-    "NO SIGNATURE",
-    "PENDING",
-    "NO INFORMATIONS",
-    "MISSING INFORMATION"
+    "TERMINAL ID - WRONG DATE", "NO IMAGE FOR THE DEVICE", "WRONG DATE", "TERMINAL ID", "NO J.O",
+    "DONE", "NO RETAILERS SIGNATURE", "UNCLEAR IMAGE", "NO ENGINEER SIGNATURE",
+    "NO SIGNATURE", "PENDING", "NO INFORMATIONS", "MISSING INFORMATION"
 ]
 
 # دالة التصنيف
@@ -36,13 +34,13 @@ def classify_note(note):
             return case
     return "OTHER"
 
-if uploaded_file:
+# معالجة الملف
+if uploaded_file and username.strip():
     try:
         df = pd.read_excel(uploaded_file, sheet_name="Sheet2")
     except:
         df = pd.read_excel(uploaded_file)
 
-    # نحول الأعمدة إلى lowercase للمقارنة
     df.columns = [col.lower().strip() for col in df.columns]
     required_cols = ['note', 'terminal_id', 'technician_name', 'ticket_type']
 
@@ -68,12 +66,11 @@ if uploaded_file:
     st.subheader("📋 Data Table")
     st.dataframe(df[['terminal_id', 'technician_name', 'note_type', 'ticket_type']])
 
-    # جدول عدد الملاحظات لكل فني ونوع
     st.subheader("📑 Notes per Technician by Type")
     tech_note_group = df.groupby(['technician_name', 'note_type']).size().reset_index(name='Count')
     st.dataframe(tech_note_group)
 
-    # حفظ نسخة للتنزيل
+    # حفظ الملخص للتنزيل
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for note_type in df['note_type'].unique():
@@ -81,27 +78,44 @@ if uploaded_file:
             subset[['terminal_id', 'technician_name', 'note_type', 'ticket_type']].to_excel(writer, sheet_name=note_type[:31], index=False)
         note_counts.reset_index().rename(columns={'index': 'note_type', 'note_type': 'count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
         tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
-    st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # 📝 سجل التحميلات
-    if username.strip():
-        try:
-            log_df = pd.read_csv("logs.csv")
-        except FileNotFoundError:
-            log_df = pd.DataFrame(columns=["Username", "File", "Note Count", "Unique Note Types"])
-        new_entry = {
-            "Username": username.strip(),
-            "File": uploaded_file.name,
-            "Note Count": len(df),
-            "Unique Note Types": df['note_type'].nunique()
-        }
-        log_df = pd.concat([log_df, pd.DataFrame([new_entry])], ignore_index=True)
-        log_df.to_csv("logs.csv", index=False)
+    # حفظ الملخص كملف فعلي
+    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{username.strip().replace(' ', '_')}.xlsx"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(output.getvalue())
 
-# 📚 عرض السجل
+    st.download_button("📥 Download Summary Excel", output.getvalue(), filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # سجل التحميل
+    log_entry = {
+        "Username": username.strip(),
+        "File": filename,
+        "Date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "Note Count": len(df),
+        "Unique Note Types": df['note_type'].nunique()
+    }
+
+    try:
+        log_df = pd.read_csv(LOG_FILE)
+    except FileNotFoundError:
+        log_df = pd.DataFrame(columns=log_entry.keys())
+
+    log_df = pd.concat([log_df, pd.DataFrame([log_entry])], ignore_index=True)
+    log_df.to_csv(LOG_FILE, index=False)
+
+# عرض السجل الجانبي وتحميل الملفات القديمة
 st.sidebar.subheader("📁 Upload History")
 try:
-    logs_df = pd.read_csv("logs.csv")
+    logs_df = pd.read_csv(LOG_FILE)
     st.sidebar.dataframe(logs_df)
+
+    # اختيار ملف من الملفات السابقة
+    file_list = logs_df["File"].unique().tolist()
+    selected_file = st.sidebar.selectbox("📂 Download Previous File", file_list)
+    if selected_file:
+        selected_path = os.path.join(UPLOAD_DIR, selected_file)
+        with open(selected_path, "rb") as f:
+            st.sidebar.download_button("⬇️ Download Selected File", f.read(), file_name=selected_file)
 except FileNotFoundError:
     st.sidebar.info("No uploads yet.")
