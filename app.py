@@ -35,9 +35,18 @@ def classify_note(note):
             return case
     return "MISSING INFORMATION"
 
-# Time-ago formatter
+# Time-ago formatter with error handling
 def time_since(date_str):
-    upload_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    formats = ["%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y"]
+    for fmt in formats:
+        try:
+            upload_time = datetime.strptime(date_str, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        return "Invalid date format"
+    
     delta = datetime.now() - upload_time
     seconds = delta.total_seconds()
     if seconds < 60:
@@ -170,6 +179,7 @@ if os.path.exists(LOG_FILE):
             with open(file_path, "rb") as f:
                 st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file)
 
+        # Add delete option
         if st.sidebar.button("❌ Delete this file"):
             os.remove(file_path)
             logs_df = logs_df[logs_df["File"] != selected_file]
