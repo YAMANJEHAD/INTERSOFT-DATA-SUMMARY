@@ -162,15 +162,3 @@ if os.path.exists(LOG_FILE):
             st.experimental_rerun()
 else:
     st.sidebar.info("No file history yet.")
-
-# ========== DISPLAY FILE HISTORY AS TABLE ==========
-st.subheader("📚 Uploaded Files History")
-
-if os.path.exists(LOG_FILE):
-    logs_df = pd.read_csv(LOG_FILE)
-    logs_df = logs_df.sort_values(by="Date", ascending=False)
-    logs_df['Time Ago'] = logs_df['Date'].apply(time_since)  # Add Time Ago column
-
-    st.dataframe(logs_df[['Username', 'File', 'Date', 'Note Count', 'Unique Note Types', 'Time Ago']])
-else:
-    st.info("No files have been uploaded yet.")
