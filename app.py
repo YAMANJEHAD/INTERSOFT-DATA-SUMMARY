@@ -4,29 +4,29 @@ import io
 import os
 from datetime import datetime
 
-# إعدادات الصفحة
+# إعداد الصفحة
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 st.title("📊 INTERSOFT Analyzer")
 
-# مجلد حفظ الملفات
+# مجلد الملفات والسجل
 UPLOAD_DIR = "uploaded_files"
 LOG_FILE = "logs.csv"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# اسم المستخدم أعلى الصفحة
+# اسم المستخدم
 username = st.text_input("🧑‍💻 Enter your name:", key="username", placeholder="Type your name here...")
 
-# رفع الملف
+# رفع ملف جديد
 uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"])
 
-# الحالات المعروفة لتصنيف الملاحظات
+# الحالات المعروفة
 known_cases = [
     "TERMINAL ID - WRONG DATE", "NO IMAGE FOR THE DEVICE", "WRONG DATE", "TERMINAL ID", "NO J.O",
     "DONE", "NO RETAILERS SIGNATURE", "UNCLEAR IMAGE", "NO ENGINEER SIGNATURE",
     "NO SIGNATURE", "PENDING", "NO INFORMATIONS", "MISSING INFORMATION"
 ]
 
-# دالة التصنيف
+# تصنيف الملاحظات
 def classify_note(note):
     note = str(note).strip().upper()
     for case in known_cases:
@@ -34,7 +34,7 @@ def classify_note(note):
             return case
     return "OTHER"
 
-# معالجة الملف
+# عند رفع ملف
 if uploaded_file and username.strip():
     try:
         df = pd.read_excel(uploaded_file, sheet_name="Sheet2")
@@ -48,13 +48,12 @@ if uploaded_file and username.strip():
         st.error(f"⚠️ Missing required columns. Expected: {required_cols}. Found: {list(df.columns)}")
         st.stop()
 
-    # تصنيف الملاحظات
     df['note_type'] = df['note'].apply(classify_note)
     df = df[~df['note_type'].isin(['DONE', 'NO J.O'])]
 
     st.success("✅ File processed successfully!")
 
-    # عرض الرسوم البيانية
+    # عرض النتائج
     st.subheader("📈 Notes per Technician")
     tech_counts = df.groupby('technician_name')['note_type'].count().sort_values(ascending=False)
     st.bar_chart(tech_counts)
@@ -70,7 +69,7 @@ if uploaded_file and username.strip():
     tech_note_group = df.groupby(['technician_name', 'note_type']).size().reset_index(name='Count')
     st.dataframe(tech_note_group)
 
-    # حفظ الملخص للتنزيل
+    # تجهيز للتحميل
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for note_type in df['note_type'].unique():
@@ -79,15 +78,16 @@ if uploaded_file and username.strip():
         note_counts.reset_index().rename(columns={'index': 'note_type', 'note_type': 'count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
         tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
 
-    # حفظ الملخص كملف فعلي
+    # حفظ الملف فعلياً
     filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{username.strip().replace(' ', '_')}.xlsx"
     filepath = os.path.join(UPLOAD_DIR, filename)
     with open(filepath, "wb") as f:
         f.write(output.getvalue())
 
+    # زر التحميل
     st.download_button("📥 Download Summary Excel", output.getvalue(), filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # سجل التحميل
+    # تحديث سجل الملفات
     log_entry = {
         "Username": username.strip(),
         "File": filename,
@@ -104,18 +104,33 @@ if uploaded_file and username.strip():
     log_df = pd.concat([log_df, pd.DataFrame([log_entry])], ignore_index=True)
     log_df.to_csv(LOG_FILE, index=False)
 
-# عرض السجل الجانبي وتحميل الملفات القديمة
+# ---- 🔻 الشريط الجانبي (الهيستوري) ----
 st.sidebar.subheader("📁 Upload History")
+
 try:
     logs_df = pd.read_csv(LOG_FILE)
-    st.sidebar.dataframe(logs_df)
+    if not logs_df.empty:
+        file_names = logs_df["File"].tolist()
+        selected_file = st.sidebar.selectbox("📂 Choose a file", file_names)
 
-    # اختيار ملف من الملفات السابقة
-    file_list = logs_df["File"].unique().tolist()
-    selected_file = st.sidebar.selectbox("📂 Download Previous File", file_list)
-    if selected_file:
-        selected_path = os.path.join(UPLOAD_DIR, selected_file)
-        with open(selected_path, "rb") as f:
-            st.sidebar.download_button("⬇️ Download Selected File", f.read(), file_name=selected_file)
+        if selected_file:
+            file_info = logs_df[logs_df["File"] == selected_file].iloc[0]
+            st.sidebar.markdown(f"👤 Uploaded by: **{file_info['Username']}**")
+            st.sidebar.markdown(f"📅 Date: {file_info['Date']}")
+            st.sidebar.markdown(f"📝 Notes: {file_info['Note Count']}")
+            st.sidebar.markdown(f"🔢 Unique Types: {file_info['Unique Note Types']}")
+
+            selected_path = os.path.join(UPLOAD_DIR, selected_file)
+            with open(selected_path, "rb") as f:
+                st.sidebar.download_button("⬇️ Download", f.read(), file_name=selected_file)
+
+            # زر الحذف
+            if st.sidebar.button("❌ Delete this file"):
+                os.remove(selected_path)
+                logs_df = logs_df[logs_df["File"] != selected_file]
+                logs_df.to_csv(LOG_FILE, index=False)
+                st.sidebar.success("File deleted successfully. Please reload the app.")
+    else:
+        st.sidebar.info("No uploaded files yet.")
 except FileNotFoundError:
-    st.sidebar.info("No uploads yet.")
+    st.sidebar.info("No upload history found.")
