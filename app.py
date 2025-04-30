@@ -35,18 +35,9 @@ def classify_note(note):
             return case
     return "MISSING INFORMATION"
 
-# Time-ago formatter with error handling
+# Time-ago formatter
 def time_since(date_str):
-    formats = ["%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y"]
-    for fmt in formats:
-        try:
-            upload_time = datetime.strptime(date_str, fmt)
-            break
-        except ValueError:
-            continue
-    else:
-        return "Invalid date format"
-    
+    upload_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
     delta = datetime.now() - upload_time
     seconds = delta.total_seconds()
     if seconds < 60:
@@ -175,16 +166,19 @@ if os.path.exists(LOG_FILE):
         st.sidebar.markdown(f"**🔢 Unique Types:** {file_info['Unique Note Types']}")
 
         file_path = os.path.join(DATA_DIR, selected_file)
+
         if os.path.exists(file_path):
             with open(file_path, "rb") as f:
-                st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file)
+                st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file, use_container_width=True)
 
-        # Add delete option
-        if st.sidebar.button("❌ Delete this file"):
+        # Custom Styled Delete Button
+        delete_button = st.sidebar.button("❌ Delete this file", key=f"delete_{selected_file}")
+        if delete_button:
             os.remove(file_path)
             logs_df = logs_df[logs_df["File"] != selected_file]
             logs_df.to_csv(LOG_FILE, index=False)
             st.sidebar.success("File deleted successfully.")
             st.experimental_rerun()
+
 else:
     st.sidebar.info("No file history yet.")
