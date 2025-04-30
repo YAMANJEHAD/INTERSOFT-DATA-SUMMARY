@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import os
 from datetime import datetime
-from dateutil import parser  # جديد
+from dateutil import parser  # Flexible date parsing
 
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 st.title("📊 INTERSOFT Analyzer")
@@ -12,7 +12,7 @@ LOG_FILE = "logs.csv"
 DATA_DIR = "uploaded_files"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# ===== تصنيف الملاحظات =====
+# ===== Classify note based on content =====
 def classify_note(note):
     note = str(note).strip().upper()
     known_cases = {
@@ -25,28 +25,28 @@ def classify_note(note):
             return case
     return "MISSING INFORMATION"
 
-# ===== حساب الوقت منذ الرفع =====
+# ===== Time since upload function =====
 def time_since(date_str):
     try:
-        upload_time = parser.parse(str(date_str))  # تعديل هنا
+        upload_time = parser.parse(str(date_str))  # More robust date parsing
         delta = datetime.now() - upload_time
         seconds = delta.total_seconds()
         if seconds < 60:
-            return f"{int(seconds)} ثانية"
+            return f"{int(seconds)} seconds ago"
         elif seconds < 3600:
-            return f"{int(seconds // 60)} دقيقة"
+            return f"{int(seconds // 60)} minutes ago"
         elif seconds < 86400:
-            return f"{int(seconds // 3600)} ساعة"
+            return f"{int(seconds // 3600)} hours ago"
         else:
-            return f"{int(seconds // 86400)} يوم"
+            return f"{int(seconds // 86400)} days ago"
     except Exception:
-        return "تاريخ غير صالح"
+        return "Invalid date"
 
-# ===== اسم المستخدم =====
-st.markdown("### 👤 أدخل اسمك")
-username = st.text_input("الاسم", placeholder="اكتب اسمك هنا")
+# ===== Username input =====
+st.markdown("### 👤 Enter your name")
+username = st.text_input("Name", placeholder="Type your name here")
 
-uploaded_file = st.file_uploader("📁 رفع ملف Excel", type=["xlsx"])
+uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
 
 required_cols = ['NOTE', 'TERMINAL_ID', 'TECHNICIAN_NAME', 'TICKET_TYPE']
 
@@ -66,27 +66,27 @@ if uploaded_file and username:
 
     if None in col_mapping.values():
         missing_cols = [col for col, val in col_mapping.items() if val is None]
-        st.warning(f"بعض الأعمدة مفقودة: {missing_cols}")
+        st.warning(f"Some required columns are missing: {missing_cols}")
     else:
         df.rename(columns=col_mapping, inplace=True)
 
         df['Note_Type'] = df['NOTE'].apply(classify_note)
         df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
 
-        st.success("✅ تم تحليل الملف بنجاح!")
+        st.success("✅ File processed successfully!")
 
-        st.subheader("📈 عدد الملاحظات لكل فني")
+        st.subheader("📈 Notes per Technician")
         tech_counts = df.groupby('TECHNICIAN_NAME')['Note_Type'].count().sort_values(ascending=False)
         st.bar_chart(tech_counts)
 
-        st.subheader("📊 عدد الملاحظات حسب النوع")
+        st.subheader("📊 Note Type Count")
         note_counts = df['Note_Type'].value_counts()
         st.bar_chart(note_counts)
 
-        st.subheader("📋 البيانات")
+        st.subheader("📋 Data Preview")
         st.dataframe(df[['TERMINAL_ID', 'TECHNICIAN_NAME', 'Note_Type', 'TICKET_TYPE']])
 
-        st.subheader("📑 توزيع الملاحظات لكل فني حسب النوع")
+        st.subheader("📑 Notes Distribution per Technician")
         tech_note_group = df.groupby(['TECHNICIAN_NAME', 'Note_Type']).size().reset_index(name='Count')
         st.dataframe(tech_note_group)
 
@@ -115,38 +115,38 @@ if uploaded_file and username:
             note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
             tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
 
-        st.download_button("📥 تحميل ملف التقرير", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Summary Report", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ========== 📚 سجل الملفات ========== #
-st.sidebar.header("📂 سجل الملفات")
+# ========== 📚 File History Sidebar ========== #
+st.sidebar.header("📂 File History")
 
 if os.path.exists(LOG_FILE):
     logs_df = pd.read_csv(LOG_FILE)
     logs_df = logs_df.sort_values(by="Date", ascending=False)
     file_names = logs_df["File"].tolist()
 
-    selected_file = st.sidebar.selectbox("اختر ملف:", file_names)
+    selected_file = st.sidebar.selectbox("Select a file:", file_names)
 
     if selected_file:
         file_info = logs_df[logs_df["File"] == selected_file].iloc[0]
         time_passed = time_since(file_info['Date'])
 
-        st.sidebar.markdown(f"**👤 المستخدم:** {file_info['Username']}")
-        st.sidebar.markdown(f"**📅 وقت الرفع:** {file_info['Date']}")
-        st.sidebar.markdown(f"**⏱️ منذ:** {time_passed}")
-        st.sidebar.markdown(f"**📝 عدد الملاحظات:** {file_info['Note Count']}")
-        st.sidebar.markdown(f"**🔢 أنواع فريدة:** {file_info['Unique Note Types']}")
+        st.sidebar.markdown(f"**👤 Username:** {file_info['Username']}")
+        st.sidebar.markdown(f"**📅 Upload Time:** {file_info['Date']}")
+        st.sidebar.markdown(f"**⏱️ Time Since Upload:** {time_passed}")
+        st.sidebar.markdown(f"**📝 Note Count:** {file_info['Note Count']}")
+        st.sidebar.markdown(f"**🔢 Unique Note Types:** {file_info['Unique Note Types']}")
 
         file_path = os.path.join(DATA_DIR, selected_file)
         if os.path.exists(file_path):
             with open(file_path, "rb") as f:
-                st.sidebar.download_button("⬇️ تحميل الملف", f, file_name=selected_file)
+                st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file)
 
-            if st.sidebar.button("❌ حذف الملف"):
+            if st.sidebar.button("❌ Delete File"):
                 os.remove(file_path)
                 logs_df = logs_df[logs_df["File"] != selected_file]
                 logs_df.to_csv(LOG_FILE, index=False)
-                st.sidebar.success("✅ تم حذف الملف.")
+                st.sidebar.success("✅ File deleted successfully.")
                 st.experimental_rerun()
 else:
-    st.sidebar.info("لا يوجد سجل بعد.")
+    st.sidebar.info("No files uploaded yet.")
