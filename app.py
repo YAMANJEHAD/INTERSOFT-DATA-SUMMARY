@@ -35,9 +35,19 @@ def classify_note(note):
             return case
     return "MISSING INFORMATION"
 
-# Time-ago formatter
+# Time-ago formatter with error handling for different date formats
 def time_since(date_str):
-    upload_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    # Try different formats for date parsing
+    formats = ["%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y"]
+    for fmt in formats:
+        try:
+            upload_time = datetime.strptime(date_str, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        return "Invalid date format"
+
     delta = datetime.now() - upload_time
     seconds = delta.total_seconds()
     if seconds < 60:
@@ -54,9 +64,7 @@ st.markdown("### 👤 Enter your name")
 username = st.text_input("Name", placeholder="Enter your name here")
 
 uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
-
-# Required columns we are looking for
-required_cols = ['NOTE', 'TERMINAL_ID', 'TECHNICIAN_NAME', 'TICKET_TYPE']
+required_cols = ['NOTE', 'Terminal_Id', 'Technician_Name', 'Ticket_Type']
 
 if uploaded_file and username:
     try:
@@ -64,86 +72,62 @@ if uploaded_file and username:
     except:
         df = pd.read_excel(uploaded_file)
 
-    # Normalize column names (strip spaces and convert to uppercase)
+    # Normalize column names
     df.columns = [col.strip().upper() for col in df.columns]
-
-    # Dynamically match the required columns in the dataset
-    col_mapping = {
-        'NOTE': None,
-        'TERMINAL_ID': None,
-        'TECHNICIAN_NAME': None,
-        'TICKET_TYPE': None
-    }
-
-    # Try to find the closest match for each required column
-    for req_col in required_cols:
-        match_col = next((col for col in df.columns if req_col in col), None)
-        if match_col:
-            col_mapping[req_col] = match_col
-
-    # If any required column is missing, give a warning
-    if None in col_mapping.values():
-        missing_cols = [col for col, value in col_mapping.items() if value is None]
-        st.warning(f"Some required columns are missing or could not be matched: {missing_cols}")
+    col_map = {col: col.title().replace("_", "") for col in required_cols}
+    if not all(col in df.columns for col in required_cols):
+        st.warning(f"Some required columns are missing. Found columns: {df.columns.tolist()}")
     else:
-        # Rename columns in the DataFrame based on matched columns
-        df.rename(columns=col_mapping, inplace=True)
+        df['Note_Type'] = df['NOTE'].apply(classify_note)
+        df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
 
-        # Check if all required columns are now present
-        if not all(col in df.columns for col in required_cols):
-            st.warning(f"Some required columns are still missing. Found columns: {df.columns.tolist()}")
+        st.success("✅ File processed successfully!")
+
+        # Display visualizations
+        st.subheader("📈 Notes per Technician")
+        tech_counts = df.groupby('Technician_Name')['Note_Type'].count().sort_values(ascending=False)
+        st.bar_chart(tech_counts)
+
+        st.subheader("📊 Notes by Type")
+        note_counts = df['Note_Type'].value_counts()
+        st.bar_chart(note_counts)
+
+        st.subheader("📋 Notes Data")
+        st.dataframe(df[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']])
+
+        st.subheader("📑 Notes per Technician by Type")
+        tech_note_group = df.groupby(['Technician_Name', 'Note_Type']).size().reset_index(name='Count')
+        st.dataframe(tech_note_group)
+
+        # Save processed file
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        filename = f"{username}_{uploaded_file.name}"
+        save_path = os.path.join(DATA_DIR, filename)
+        df.to_csv(save_path, index=False)
+
+        # Save log
+        log_data = pd.DataFrame([{
+            "Username": username,
+            "File": filename,
+            "Date": timestamp,
+            "Note Count": len(df),
+            "Unique Note Types": df['Note_Type'].nunique()
+        }])
+        if os.path.exists(LOG_FILE):
+            log_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
         else:
-            # Classify notes
-            df['Note_Type'] = df['NOTE'].apply(classify_note)
-            df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
+            log_data.to_csv(LOG_FILE, index=False)
 
-            st.success("✅ File processed successfully!")
+        # Prepare summary Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            for note_type in df['Note_Type'].unique():
+                subset = df[df['Note_Type'] == note_type]
+                subset[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']].to_excel(writer, sheet_name=note_type[:31], index=False)
+            note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
+            tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
 
-            # Display visualizations
-            st.subheader("📈 Notes per Technician")
-            tech_counts = df.groupby('TECHNICIAN_NAME')['Note_Type'].count().sort_values(ascending=False)
-            st.bar_chart(tech_counts)
-
-            st.subheader("📊 Notes by Type")
-            note_counts = df['Note_Type'].value_counts()
-            st.bar_chart(note_counts)
-
-            st.subheader("📋 Notes Data")
-            st.dataframe(df[['TERMINAL_ID', 'TECHNICIAN_NAME', 'Note_Type', 'TICKET_TYPE']])
-
-            st.subheader("📑 Notes per Technician by Type")
-            tech_note_group = df.groupby(['TECHNICIAN_NAME', 'Note_Type']).size().reset_index(name='Count')
-            st.dataframe(tech_note_group)
-
-            # Save processed file
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            filename = f"{username}_{uploaded_file.name}"
-            save_path = os.path.join(DATA_DIR, filename)
-            df.to_csv(save_path, index=False)
-
-            # Save log
-            log_data = pd.DataFrame([{
-                "Username": username,
-                "File": filename,
-                "Date": timestamp,
-                "Note Count": len(df),
-                "Unique Note Types": df['Note_Type'].nunique()
-            }])
-            if os.path.exists(LOG_FILE):
-                log_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
-            else:
-                log_data.to_csv(LOG_FILE, index=False)
-
-            # Prepare summary Excel
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                for note_type in df['Note_Type'].unique():
-                    subset = df[df['Note_Type'] == note_type]
-                    subset[['TERMINAL_ID', 'TECHNICIAN_NAME', 'Note_Type', 'TICKET_TYPE']].to_excel(writer, sheet_name=note_type[:31], index=False)
-                note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
-                tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
-
-            st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ========== FILE HISTORY ========== #
 st.sidebar.header("📚 File History")
@@ -178,3 +162,15 @@ if os.path.exists(LOG_FILE):
             st.experimental_rerun()
 else:
     st.sidebar.info("No file history yet.")
+
+# ========== DISPLAY FILE HISTORY AS TABLE ==========
+st.subheader("📚 Uploaded Files History")
+
+if os.path.exists(LOG_FILE):
+    logs_df = pd.read_csv(LOG_FILE)
+    logs_df = logs_df.sort_values(by="Date", ascending=False)
+    logs_df['Time Ago'] = logs_df['Date'].apply(time_since)  # Add Time Ago column
+
+    st.dataframe(logs_df[['Username', 'File', 'Date', 'Note Count', 'Unique Note Types', 'Time Ago']])
+else:
+    st.info("No files have been uploaded yet.")
