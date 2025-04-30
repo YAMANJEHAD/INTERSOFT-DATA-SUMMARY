@@ -54,7 +54,7 @@ st.markdown("### 👤 Enter your name")
 username = st.text_input("Name", placeholder="Enter your name here")
 
 uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
-required_cols = ['NOTE', 'TERMINAL_ID', 'TECHNICIAN_NAME', 'TICKET_TYPE']
+required_cols = ['NOTE', 'Terminal_Id', 'Technician_Name', 'Ticket_Type']
 
 if uploaded_file and username:
     try:
@@ -62,22 +62,13 @@ if uploaded_file and username:
     except:
         df = pd.read_excel(uploaded_file)
 
-    # Normalize column names (strip spaces and convert to uppercase)
+    # Normalize column names
     df.columns = [col.strip().upper() for col in df.columns]
-
-    # Manually map column names to the required format if necessary
-    df.rename(columns={
-        'TERMINAL_ID': 'Terminal_Id',
-        'NOTE': 'Note',
-        'TECHNICIAN_NAME': 'Technician_Name',
-        'TICKET_TYPE': 'Ticket_Type'
-    }, inplace=True)
-
-    # Check if required columns are present
+    col_map = {col: col.title().replace("_", "") for col in required_cols}
     if not all(col in df.columns for col in required_cols):
         st.warning(f"Some required columns are missing. Found columns: {df.columns.tolist()}")
     else:
-        df['Note_Type'] = df['Note'].apply(classify_note)
+        df['Note_Type'] = df['NOTE'].apply(classify_note)
         df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
 
         st.success("✅ File processed successfully!")
