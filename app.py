@@ -1,136 +1,146 @@
 import streamlit as st
 import pandas as pd
 import io
-import os
+import matplotlib.pyplot as plt
+import streamlit.components.v1 as components
 from datetime import datetime
 
-# إعداد الصفحة
+# Set the page config
 st.set_page_config(page_title="Note Analyzer", layout="wide")
-st.title("📊 INTERSOFT Analyzer")
 
-# مجلد الملفات والسجل
-UPLOAD_DIR = "uploaded_files"
-LOG_FILE = "logs.csv"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Add custom animation styles and clock to the page
+clock_html = """
+<style>
+/* Animation for the clock */
+.clock-container {
+    font-family: 'Courier New', monospace;
+    font-size: 24px;
+    color: #ffffff;
+    background: linear-gradient(90deg, #f39c12, #e67e22);
+    padding: 10px 20px;
+    border-radius: 12px;
+    width: fit-content;
+    animation: pulse 2s infinite;
+    margin-bottom: 20px;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 9999;
+}
 
-# اسم المستخدم
-username = st.text_input("🧑‍💻 Enter your name:", key="username", placeholder="Type your name here...")
+/* Keyframe for pulse animation */
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0); }
+}
 
-# رفع ملف جديد
-uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"])
+/* Page animation */
+@keyframes slideIn {
+    0% { transform: translateX(100%); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
 
-# الحالات المعروفة
-known_cases = [
-    "TERMINAL ID - WRONG DATE", "NO IMAGE FOR THE DEVICE", "WRONG DATE", "TERMINAL ID", "NO J.O",
-    "DONE", "NO RETAILERS SIGNATURE", "UNCLEAR IMAGE", "NO ENGINEER SIGNATURE",
-    "NO SIGNATURE", "PENDING", "NO INFORMATIONS", "MISSING INFORMATION"
-]
+/* Apply sliding effect to the page */
+.page-container {
+    animation: slideIn 1s ease-out;
+    overflow: hidden;
+}
+</style>
+<div class="clock-container">
+    <span id="clock"></span>
+</div>
+<script>
+function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').innerText = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+"""
 
-# تصنيف الملاحظات
+# Embed the clock animation and page effect
+components.html(clock_html, height=100)
+
+# Page title and other content
+st.title("📊 INTERSOFT Analyzer ")
+
+# File uploader
+uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+
+required_cols = ['NOTE', 'Terminal_Id', 'Technician_Name', 'Ticket_Type']
+
+# Function to classify the note
 def classify_note(note):
     note = str(note).strip().upper()
-    for case in known_cases:
-        if case in note:
-            return case
-    return "OTHER"
+    if "TERMINAL ID - WRONG DATE" in note:
+        return "TERMINAL ID - WRONG DATE"
+    elif "NO IMAGE FOR THE DEVICE" in note:
+        return "NO IMAGE FOR THE DEVICE"
+    elif "WRONG DATE" in note:
+        return "WRONG DATE"
+    elif "TERMINAL ID" in note:
+        return "TERMINAL ID"
+    elif "NO J.O" in note:
+        return "NO J.O"
+    elif "DONE" in note:
+        return "DONE"
+    elif "NO RETAILERS SIGNATURE" in note:
+        return "NO RETAILERS SIGNATURE"
+    elif "UNCLEAR IMAGE" in note:
+        return "UNCLEAR IMAGE"
+    elif "NO ENGINEER SIGNATURE" in note:
+        return "NO ENGINEER SIGNATURE"
+    elif "NO SIGNATURE" in note:
+        return "NO SIGNATURE"
+    elif "PENDING" in note:
+        return "PENDING"
+    elif "NO INFORMATIONS" in note:
+        return "NO INFORMATIONS"
+    elif "MISSING INFORMATION" in note:
+        return "MISSING INFORMATION"
+    else:
+        return "MISSING INFORMATION"
 
-# عند رفع ملف
-if uploaded_file and username.strip():
+# If a file is uploaded, process it
+if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file, sheet_name="Sheet2")
     except:
         df = pd.read_excel(uploaded_file)
 
-    df.columns = [col.lower().strip() for col in df.columns]
-    required_cols = ['note', 'terminal_id', 'technician_name', 'ticket_type']
-
     if not all(col in df.columns for col in required_cols):
-        st.error(f"⚠️ Missing required columns. Expected: {required_cols}. Found: {list(df.columns)}")
-        st.stop()
-
-    df['note_type'] = df['note'].apply(classify_note)
-    df = df[~df['note_type'].isin(['DONE', 'NO J.O'])]
-
-    st.success("✅ File processed successfully!")
-
-    # عرض النتائج
-    st.subheader("📈 Notes per Technician")
-    tech_counts = df.groupby('technician_name')['note_type'].count().sort_values(ascending=False)
-    st.bar_chart(tech_counts)
-
-    st.subheader("📊 Notes by Type")
-    note_counts = df['note_type'].value_counts()
-    st.bar_chart(note_counts)
-
-    st.subheader("📋 Data Table")
-    st.dataframe(df[['terminal_id', 'technician_name', 'note_type', 'ticket_type']])
-
-    st.subheader("📑 Notes per Technician by Type")
-    tech_note_group = df.groupby(['technician_name', 'note_type']).size().reset_index(name='Count')
-    st.dataframe(tech_note_group)
-
-    # تجهيز للتحميل
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        for note_type in df['note_type'].unique():
-            subset = df[df['note_type'] == note_type]
-            subset[['terminal_id', 'technician_name', 'note_type', 'ticket_type']].to_excel(writer, sheet_name=note_type[:31], index=False)
-        note_counts.reset_index().rename(columns={'index': 'note_type', 'note_type': 'count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
-        tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
-
-    # حفظ الملف فعلياً
-    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{username.strip().replace(' ', '_')}.xlsx"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    with open(filepath, "wb") as f:
-        f.write(output.getvalue())
-
-    # زر التحميل
-    st.download_button("📥 Download Summary Excel", output.getvalue(), filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    # تحديث سجل الملفات
-    log_entry = {
-        "Username": username.strip(),
-        "File": filename,
-        "Date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        "Note Count": len(df),
-        "Unique Note Types": df['note_type'].nunique()
-    }
-
-    try:
-        log_df = pd.read_csv(LOG_FILE)
-    except FileNotFoundError:
-        log_df = pd.DataFrame(columns=log_entry.keys())
-
-    log_df = pd.concat([log_df, pd.DataFrame([log_entry])], ignore_index=True)
-    log_df.to_csv(LOG_FILE, index=False)
-
-# ---- 🔻 الشريط الجانبي (الهيستوري) ----
-st.sidebar.subheader("📁 Upload History")
-
-try:
-    logs_df = pd.read_csv(LOG_FILE)
-    if not logs_df.empty:
-        file_names = logs_df["File"].tolist()
-        selected_file = st.sidebar.selectbox("📂 Choose a file", file_names)
-
-        if selected_file:
-            file_info = logs_df[logs_df["File"] == selected_file].iloc[0]
-            st.sidebar.markdown(f"👤 Uploaded by: **{file_info['Username']}**")
-            st.sidebar.markdown(f"📅 Date: {file_info['Date']}")
-            st.sidebar.markdown(f"📝 Notes: {file_info['Note Count']}")
-            st.sidebar.markdown(f"🔢 Unique Types: {file_info['Unique Note Types']}")
-
-            selected_path = os.path.join(UPLOAD_DIR, selected_file)
-            with open(selected_path, "rb") as f:
-                st.sidebar.download_button("⬇️ Download", f.read(), file_name=selected_file)
-
-            # زر الحذف
-            if st.sidebar.button("❌ Delete this file"):
-                os.remove(selected_path)
-                logs_df = logs_df[logs_df["File"] != selected_file]
-                logs_df.to_csv(LOG_FILE, index=False)
-                st.sidebar.success("File deleted successfully. Please reload the app.")
+        st.error(f"Missing required columns. Available: {list(df.columns)}")
     else:
-        st.sidebar.info("No uploaded files yet.")
-except FileNotFoundError:
-    st.sidebar.info("No upload history found.")
+        df['Note_Type'] = df['NOTE'].apply(classify_note)
+        df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
+
+        st.success("✅ File processed successfully!")
+
+        # Show charts
+        st.subheader("📈 Notes per Technician")
+        tech_counts = df.groupby('Technician_Name')['Note_Type'].count().sort_values(ascending=False)
+        st.bar_chart(tech_counts)
+
+        st.subheader("📊 Notes by Type")
+        note_counts = df['Note_Type'].value_counts()
+        st.bar_chart(note_counts)
+
+        st.subheader("📋 Data Table")
+        st.dataframe(df[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']])
+
+        # Group by technician and note type
+        st.subheader("📑 Notes per Technician by Type")
+        tech_note_group = df.groupby(['Technician_Name', 'Note_Type']).size().reset_index(name='Count')
+        st.dataframe(tech_note_group)
+
+        # Downloadable summary Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            for note_type in df['Note_Type'].unique():
+                subset = df[df['Note_Type'] == note_type]
+                subset[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']].to_excel(writer, sheet_name=note_type[:31], index=False)
+            note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
+            tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
+        st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
