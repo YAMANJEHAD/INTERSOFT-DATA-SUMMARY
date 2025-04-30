@@ -114,8 +114,4 @@ if uploaded_file:
             tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
         st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# View logs
-if st.sidebar.checkbox("📚 View Logs"):
-    st.sidebar.write("User Activity Log")
-    logs_df = pd.read_csv(logs_file)
-    st.dataframe(logs_df)
+
