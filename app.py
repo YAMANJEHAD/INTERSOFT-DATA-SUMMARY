@@ -3,7 +3,9 @@ import pandas as pd
 import io
 import os
 from datetime import datetime
+import streamlit.components.v1 as components
 
+# Set page configuration
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 st.title("📊 INTERSOFT Analyzer")
 
@@ -48,6 +50,61 @@ def time_since(date_str):
         return f"{int(seconds // 3600)} hours ago"
     else:
         return f"{int(seconds // 86400)} days ago"
+
+# Custom clock and animation
+clock_html = """
+<style>
+/* Animation for the clock */
+.clock-container {
+    font-family: 'Courier New', monospace;
+    font-size: 24px;
+    color: #ffffff;
+    background: linear-gradient(90deg, #f39c12, #e67e22);
+    padding: 10px 20px;
+    border-radius: 12px;
+    width: fit-content;
+    animation: pulse 2s infinite;
+    margin-bottom: 20px;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 9999;
+}
+
+/* Keyframe for pulse animation */
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0); }
+}
+
+/* Page animation */
+@keyframes slideIn {
+    0% { transform: translateX(100%); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+/* Apply sliding effect to the page */
+.page-container {
+    animation: slideIn 1s ease-out;
+    overflow: hidden;
+}
+</style>
+<div class="clock-container">
+    <span id="clock"></span>
+</div>
+<script>
+function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').innerText = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+"""
+
+# Embed the clock animation
+components.html(clock_html, height=100)
 
 # Input username at the top
 st.markdown("### 👤 Enter your name")
