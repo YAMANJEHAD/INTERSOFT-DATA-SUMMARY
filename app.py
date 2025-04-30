@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 import os
+import io
 
 # إعدادات الصفحة
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 st.title("📊 INTERSOFT Analyzer")
 
 # تعريف المجلدات
-LOG_FILE = "logs.csv"
 DATA_DIR = "uploaded_files"
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -92,18 +92,6 @@ if uploaded_file and username:
             save_path = os.path.join(DATA_DIR, filename)
             df.to_csv(save_path, index=False)
 
-            # إضافة السجل
-            log_data = pd.DataFrame([{
-                "Username": username,
-                "File": filename,
-                "Note Count": len(df),
-                "Unique Note Types": df['Note_Type'].nunique()
-            }])
-            if os.path.exists(LOG_FILE):
-                log_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
-            else:
-                log_data.to_csv(LOG_FILE, index=False)
-
             # إعداد ملف Excel للتحميل
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -113,34 +101,3 @@ if uploaded_file and username:
 
             st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ========== تاريخ الملفات ========== #
-st.sidebar.header("📚 File History")
-
-if os.path.exists(LOG_FILE):
-    logs_df = pd.read_csv(LOG_FILE)
-    logs_df = logs_df.sort_values(by="File", ascending=False)
-    file_names = logs_df["File"].tolist()
-
-    selected_file = st.sidebar.selectbox("Select a file to download or delete", file_names)
-
-    if selected_file:
-        file_info = logs_df[logs_df["File"] == selected_file].iloc[0]
-
-        st.sidebar.markdown(f"**👤 Username:** {file_info['Username']}")
-        st.sidebar.markdown(f"**📝 Notes:** {file_info['Note Count']}")
-        st.sidebar.markdown(f"**🔢 Unique Types:** {file_info['Unique Note Types']}")
-
-        file_path = os.path.join(DATA_DIR, selected_file)
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file)
-
-        # خيار الحذف
-        if st.sidebar.button("❌ Delete this file"):
-            os.remove(file_path)
-            logs_df = logs_df[logs_df["File"] != selected_file]
-            logs_df.to_csv(LOG_FILE, index=False)
-            st.sidebar.success("File deleted successfully.")
-            st.experimental_rerun()
-else:
-    st.sidebar.info("No file history yet.")
