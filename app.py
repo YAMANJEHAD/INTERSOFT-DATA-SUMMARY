@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 
-st.title("📊 Note Analyzer Web App")
+st.title("📊 INTERSOFT Analyzer ")
 
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
