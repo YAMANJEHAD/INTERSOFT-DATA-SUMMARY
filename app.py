@@ -1,149 +1,84 @@
-import streamlit as st
-import pandas as pd
-import io
 import os
+import pandas as pd
+import streamlit as st
 from datetime import datetime
 
-st.set_page_config(page_title="Note Analyzer", layout="wide")
-st.title("📊 INTERSOFT Analyzer")
-
-# Define directories
+# إعداد المسارات
+UPLOAD_FOLDER = "uploads"
 LOG_FILE = "logs.csv"
-DATA_DIR = "uploaded_files"
-os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Classify function
-def classify_note(note):
-    note = str(note).strip().upper()
-    known_cases = {
-        "TERMINAL ID - WRONG DATE",
-        "NO IMAGE FOR THE DEVICE",
-        "WRONG DATE",
-        "TERMINAL ID",
-        "NO J.O",
-        "DONE",
-        "NO RETAILERS SIGNATURE",
-        "UNCLEAR IMAGE",
-        "NO ENGINEER SIGNATURE",
-        "NO SIGNATURE",
-        "PENDING",
-        "NO INFORMATIONS",
-        "MISSING INFORMATION"
-    }
-    for case in known_cases:
-        if case in note:
-            return case
-    return "MISSING INFORMATION"
+# التأكد من وجود ملف السجل أو إصلاحه في حال كان تالف
+def load_or_initialize_logs():
+    try:
+        logs_df = pd.read_csv(LOG_FILE)
+        if not set(["Username", "File", "Note Count", "Unique Note Types"]).issubset(logs_df.columns):
+            raise ValueError("Invalid log format")
+    except Exception:
+        logs_df = pd.DataFrame(columns=["Username", "File", "Note Count", "Unique Note Types"])
+        logs_df.to_csv(LOG_FILE, index=False)
+        st.sidebar.warning("🛠️ Log file was corrupted and has been reset.")
+    return logs_df
 
-# Input username
-st.markdown("### 👤 Enter your name")
-username = st.text_input("Name", placeholder="Enter your name here")
+# حفظ ملف جديد وتحليل محتواه
+def handle_uploaded_file(uploaded_file, username):
+    filepath = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
+    with open(filepath, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    try:
+        df = pd.read_csv(filepath)
+        note_count = len(df)
+        unique_types = df['Type'].nunique() if 'Type' in df.columns else 0
+        logs_df = load_or_initialize_logs()
+        new_log = pd.DataFrame([{
+            "Username": username,
+            "File": uploaded_file.name,
+            "Note Count": note_count,
+            "Unique Note Types": unique_types
+        }])
+        logs_df = pd.concat([logs_df, new_log], ignore_index=True)
+        logs_df.to_csv(LOG_FILE, index=False)
+        st.success("✅ File uploaded and analyzed successfully.")
+    except Exception as e:
+        st.error(f"❌ Failed to process file: {e}")
 
-uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
+# حذف سجل من السجل
+def delete_log_entry(filename):
+    logs_df = load_or_initialize_logs()
+    logs_df = logs_df[logs_df["File"] != filename]
+    logs_df.to_csv(LOG_FILE, index=False)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    st.success(f"🗑️ File '{filename}' has been deleted from logs and disk.")
 
-required_cols = ['NOTE', 'TERMINAL_ID', 'TECHNICIAN_NAME', 'TICKET_TYPE']
+# واجهة Streamlit
+st.set_page_config(page_title="File Log Manager", layout="wide")
+st.title("📂 File Upload & Log Viewer")
+
+# تحميل السجلات
+logs_df = load_or_initialize_logs()
+
+# تحميل ملف جديد
+st.sidebar.header("📤 Upload a File")
+username = st.sidebar.text_input("Enter your username:")
+uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type=["csv"])
 
 if uploaded_file and username:
-    try:
-        df = pd.read_excel(uploaded_file, sheet_name="Sheet2")
-    except:
-        df = pd.read_excel(uploaded_file)
+    handle_uploaded_file(uploaded_file, username)
 
-    df.columns = [col.strip().upper() for col in df.columns]
+# عرض السجلات
+st.subheader("📝 Uploaded File Logs")
 
-    col_mapping = {
-        'NOTE': None,
-        'TERMINAL_ID': None,
-        'TECHNICIAN_NAME': None,
-        'TICKET_TYPE': None
-    }
-
-    for req_col in required_cols:
-        match_col = next((col for col in df.columns if req_col in col), None)
-        if match_col:
-            col_mapping[req_col] = match_col
-
-    if None in col_mapping.values():
-        missing_cols = [col for col, value in col_mapping.items() if value is None]
-        st.warning(f"Some required columns are missing or could not be matched: {missing_cols}")
-    else:
-        df.rename(columns=col_mapping, inplace=True)
-
-        if not all(col in df.columns for col in required_cols):
-            st.warning(f"Some required columns are still missing. Found columns: {df.columns.tolist()}")
-        else:
-            df['Note_Type'] = df['NOTE'].apply(classify_note)
-            df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
-
-            st.success("✅ File processed successfully!")
-
-            st.subheader("📈 Notes per Technician")
-            tech_counts = df.groupby('TECHNICIAN_NAME')['Note_Type'].count().sort_values(ascending=False)
-            st.bar_chart(tech_counts)
-
-            st.subheader("📊 Notes by Type")
-            note_counts = df['Note_Type'].value_counts()
-            st.bar_chart(note_counts)
-
-            st.subheader("📋 Notes Data")
-            st.dataframe(df[['TERMINAL_ID', 'TECHNICIAN_NAME', 'Note_Type', 'TICKET_TYPE']])
-
-            st.subheader("📑 Notes per Technician by Type")
-            tech_note_group = df.groupby(['TECHNICIAN_NAME', 'Note_Type']).size().reset_index(name='Count')
-            st.dataframe(tech_note_group)
-
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            filename = f"{username}_{uploaded_file.name}"
-            save_path = os.path.join(DATA_DIR, filename)
-            df.to_csv(save_path, index=False)
-
-            log_data = pd.DataFrame([{
-                "Username": username,
-                "File": filename,
-                "Note Count": len(df),
-                "Unique Note Types": df['Note_Type'].nunique()
-            }])
-            if os.path.exists(LOG_FILE):
-                log_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
-            else:
-                log_data.to_csv(LOG_FILE, index=False)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                for note_type in df['Note_Type'].unique():
-                    subset = df[df['Note_Type'] == note_type]
-                    subset[['TERMINAL_ID', 'TECHNICIAN_NAME', 'Note_Type', 'TICKET_TYPE']].to_excel(writer, sheet_name=note_type[:31], index=False)
-                note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
-                tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
-
-            st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ========== FILE HISTORY (Sidebar) ========== #
-st.sidebar.header("📂 File History")
-
-if os.path.exists(LOG_FILE):
-    logs_df = pd.read_csv(LOG_FILE)
-    file_names = logs_df["File"].tolist()
-
-    selected_file = st.sidebar.selectbox("📄 Select a file", file_names)
-
-    if selected_file:
-        file_info = logs_df[logs_df["File"] == selected_file].iloc[0]
-
-        st.sidebar.markdown(f"**👤 User:** `{file_info['Username']}`")
-        st.sidebar.markdown(f"**📝 Notes:** `{file_info['Note Count']}`")
-        st.sidebar.markdown(f"**🔢 Types:** `{file_info['Unique Note Types']}`")
-
-        file_path = os.path.join(DATA_DIR, selected_file)
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                st.sidebar.download_button("⬇️ Download File", f, file_name=selected_file)
-
-        if st.sidebar.button("❌ Delete File"):
-            os.remove(file_path)
-            logs_df = logs_df[logs_df["File"] != selected_file]
-            logs_df.to_csv(LOG_FILE, index=False)
-            st.sidebar.success("✅ File deleted successfully.")
-            st.experimental_rerun()
+if logs_df.empty:
+    st.info("No logs available.")
 else:
-    st.sidebar.info("No file history yet.")
+    for i, row in logs_df.iterrows():
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
+        col1.markdown(f"**👤 Username:** {row['Username']}")
+        col2.markdown(f"**📄 File:** {row['File']}")
+        col3.markdown(f"**🧮 Notes:** {row['Note Count']}")
+        col4.markdown(f"**🔢 Unique Types:** {row['Unique Note Types']}")
+        if col5.button("🗑️ Delete", key=f"delete_{i}"):
+            delete_log_entry(row['File'])
+            st.experimental_rerun()
