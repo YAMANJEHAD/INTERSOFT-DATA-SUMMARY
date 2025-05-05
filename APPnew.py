@@ -1,17 +1,18 @@
 import streamlit as st
 import pandas as pd
 import io
-import plotly.express as px
+import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
+from datetime import datetime
 
-# إعداد الصفحة
+# Page config
 st.set_page_config(page_title="Note Analyzer", layout="wide")
 
-# تصميم واجهة الساعة
+# Custom HTML & CSS: Enhanced design for clock
 clock_html = """
 <style>
 body {
-    background-color: #f4f7f9;
+    background: #f4f7f9;
 }
 .clock-container {
     font-family: 'Courier New', monospace;
@@ -45,18 +46,19 @@ setInterval(updateClock, 1000);
 updateClock();
 </script>
 """
+
+# Embed HTML
 components.html(clock_html, height=100)
 
-# عنوان الصفحة
+# Page title
 st.title("📊 INTERSOFT Analyzer")
 
-# رفع الملف
+# File uploader
 uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
-# الأعمدة المطلوبة
 required_cols = ['NOTE', 'Terminal_Id', 'Technician_Name', 'Ticket_Type']
 
-# دالة التصنيف
+# Updated classification function
 def classify_note(note):
     note = str(note).strip().upper()
     if "TERMINAL ID - WRONG DATE" in note:
@@ -94,7 +96,7 @@ def classify_note(note):
     else:
         return "MISSING INFORMATION"
 
-# إذا تم رفع الملف
+# Process file
 if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file, sheet_name="Sheet2")
@@ -102,45 +104,30 @@ if uploaded_file:
         df = pd.read_excel(uploaded_file)
 
     if not all(col in df.columns for col in required_cols):
-        st.error(f"❌ Missing required columns. Available: {list(df.columns)}")
+        st.error(f"Missing required columns. Available: {list(df.columns)}")
     else:
         df['Note_Type'] = df['NOTE'].apply(classify_note)
         df = df[~df['Note_Type'].isin(['DONE', 'NO J.O'])]
 
         st.success("✅ File processed successfully!")
 
-        # رسم بياني للفنيين (عدد الملاحظات)
-        st.subheader("📈 عدد الملاحظات لكل فني")
+        # Charts
+        st.subheader("📈 Notes per Technician")
         tech_counts = df.groupby('Technician_Name')['Note_Type'].count().sort_values(ascending=False)
-        fig1 = px.bar(tech_counts.reset_index(),
-                      x='Technician_Name',
-                      y='Note_Type',
-                      title="عدد الملاحظات لكل فني",
-                      labels={'Technician_Name': 'الفني', 'Note_Type': 'عدد الملاحظات'},
-                      color='Note_Type',
-                      color_discrete_sequence=px.colors.sequential.Teal)
-        st.plotly_chart(fig1, use_container_width=True)
+        st.bar_chart(tech_counts)
 
-        # Pie Chart لتوزيع الملاحظات حسب النوع
-        st.subheader("📊 توزيع الملاحظات حسب النوع")
+        st.subheader("📊 Notes by Type")
         note_counts = df['Note_Type'].value_counts()
-        fig2 = px.pie(note_counts.reset_index(),
-                      names='index',
-                      values='Note_Type',
-                      title="نسبة كل نوع من الملاحظات",
-                      color_discrete_sequence=px.colors.sequential.RdBu)
-        st.plotly_chart(fig2, use_container_width=True)
+        st.bar_chart(note_counts)
 
-        # جدول البيانات الكامل
-        st.subheader("📋 جدول البيانات")
+        st.subheader("📋 Data Table")
         st.dataframe(df[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']])
 
-        # جدول التجميع حسب الفني ونوع الملاحظة
-        st.subheader("📑 ملاحظات كل فني حسب النوع")
+        st.subheader("📑 Notes per Technician by Type")
         tech_note_group = df.groupby(['Technician_Name', 'Note_Type']).size().reset_index(name='Count')
         st.dataframe(tech_note_group)
 
-        # إعداد ملف Excel للتحميل
+        # Excel export
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             for note_type in df['Note_Type'].unique():
@@ -148,5 +135,4 @@ if uploaded_file:
                 subset[['Terminal_Id', 'Technician_Name', 'Note_Type', 'Ticket_Type']].to_excel(writer, sheet_name=note_type[:31], index=False)
             note_counts.reset_index().rename(columns={'index': 'Note_Type', 'Note_Type': 'Count'}).to_excel(writer, sheet_name="Note Type Count", index=False)
             tech_note_group.to_excel(writer, sheet_name="Technician Notes Count", index=False)
-
-        st.download_button("📥 تحميل تقرير Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Summary Excel", output.getvalue(), "summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
